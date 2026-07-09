@@ -6,6 +6,9 @@ on:
       - master
     paths:
       - .github/workflows/build-k1-toolhead.yml
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
