@@ -71,6 +71,8 @@ jobs:
           set -euxo pipefail
           docker pull pellcorp/k1-klipper-fw-build
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             pellcorp/k1-klipper-fw-build \
             "$GITHUB_WORKSPACE/_build.sh" noz
