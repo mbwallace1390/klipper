@@ -39,11 +39,31 @@ jobs:
           set -e
 
           if [ "$merge_status" -ne 0 ]; then
-            echo "Merge conflicts:" | tee merge-conflicts.txt
-            git diff --name-only --diff-filter=U | tee -a merge-conflicts.txt
-            git status --short | tee merge-status.txt
-            exit 2
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            printf 'Initial merge conflicts:\n%s\n' "$conflicts" | tee merge-conflicts.txt
+
+            for file in \
+              .github/workflows/build-test.yaml \
+              .github/workflows/klipper3d-deploy.yaml \
+              .github/workflows/stale-issue-bot.yaml
+            do
+              if printf '%s\n' "$conflicts" | grep -Fxq "$file"; then
+                git checkout --ours -- "$file"
+                git add "$file"
+              fi
+            done
+
+            remaining="$(git diff --name-only --diff-filter=U)"
+            if [ -n "$remaining" ]; then
+              printf 'Unresolved merge conflicts:\n%s\n' "$remaining" | tee -a merge-conflicts.txt
+              git status --short | tee merge-status.txt
+              exit 2
+            fi
+
+            echo "Only unrelated workflow delete/modify conflicts were found; kept current upstream workflow files." | tee -a build-info.txt
           fi
+
+          git status --short | tee merge-status.txt
 
       - name: Build nozzle MCU firmware
         shell: bash
