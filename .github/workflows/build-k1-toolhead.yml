@@ -71,6 +71,17 @@ jobs:
 
           git status --short | tee merge-status.txt
 
+      - name: Apply current Klipper analog trigger compatibility
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Current adccmds.c calls the trigger_analog API. Pellcorp's older
+          # Kconfig predates that module, so compile the two required current
+          # Klipper sources explicitly for this ADC-enabled nozzle target.
+          sed -i '/trigger_analog\.c/d;/sos_filter\.c/d' src/Makefile
+          printf '\n# Current Klipper analog trigger compatibility\nsrc-y += trigger_analog.c sos_filter.c\n' >> src/Makefile
+          tail -n 8 src/Makefile | tee -a build-info.txt
+
       - name: Build nozzle MCU firmware
         shell: bash
         run: |
