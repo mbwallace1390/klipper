@@ -1,0 +1,72 @@
+name: Build K1 GD32 Toolhead Firmware
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/build-k1-toolhead.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out isolated K1 toolhead branch
+        uses: actions/checkout@v4
+        with:
+          ref: k1-gd32-toolhead
+          fetch-depth: 0
+
+      - name: Merge Pellcorp K1/GD32 support into temporary workspace
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add pellcorp https://github.com/pellcorp/k1-klipper-firmware.git
+          git fetch --no-tags pellcorp jun2025
+          echo "Current Klipper commit: $(git rev-parse HEAD)" | tee build-info.txt
+          echo "Pellcorp commit: $(git rev-parse pellcorp/jun2025)" | tee -a build-info.txt
+          echo "Merge base: $(git merge-base HEAD pellcorp/jun2025)" | tee -a build-info.txt
+
+          set +e
+          git merge --no-commit --no-ff pellcorp/jun2025
+          merge_status=$?
+          set -e
+
+          if [ "$merge_status" -ne 0 ]; then
+            echo "Merge conflicts:" | tee merge-conflicts.txt
+            git diff --name-only --diff-filter=U | tee -a merge-conflicts.txt
+            git status --short | tee merge-status.txt
+            exit 2
+          fi
+
+      - name: Build nozzle MCU firmware
+        shell: bash
+        run: |
+          set -euxo pipefail
+          docker pull pellcorp/k1-klipper-fw-build
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            pellcorp/k1-klipper-fw-build \
+            "$GITHUB_WORKSPACE/_build.sh" noz
+          find outfw -maxdepth 2 -type f -print | tee -a build-info.txt
+
+      - name: Upload build outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1-gd32-toolhead-build
+          if-no-files-found: warn
+          path: |
+            outfw/**/*.bin
+            build-info.txt
+            merge-conflicts.txt
+            merge-status.txt
+            .config
+            .config.noz
