@@ -1,0 +1,70 @@
+name: Build Manta M5P Firmware
+
+on:
+  push:
+    branches:
+      - k1-gd32-toolhead
+    paths:
+      - .config.manta-m5p
+      - .github/workflows/build-manta-m5p.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out matched Klipper source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Record source revision
+        shell: bash
+        run: |
+          set -euxo pipefail
+          {
+            echo "Repository commit: $(git rev-parse HEAD)"
+            echo "Source baseline: $(git merge-base HEAD e27879050722459bef4da61b3ba28fdb37149a70 2>/dev/null || true)"
+            echo "Target: BIGTREETECH Manta M5P"
+            echo "MCU: STM32G0B1"
+            echo "Bootloader: 8 KiB"
+            echo "Clock reference: 8 MHz crystal"
+            echo "Communication: USB PA11/PA12"
+          } | tee manta-m5p-build-info.txt
+
+      - name: Build Manta M5P USB firmware
+        shell: bash
+        run: |
+          set -euxo pipefail
+          docker pull pellcorp/k1-klipper-fw-build
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            pellcorp/k1-klipper-fw-build \
+            bash -lc "cd '$GITHUB_WORKSPACE' && rm -rf out .config && cp .config.manta-m5p .config && make olddefconfig && make -j2"
+
+          grep -E 'CONFIG_MACH_STM32G0B1|CONFIG_STM32_FLASH_START_2000|CONFIG_STM32_CLOCK_REF_8M|CONFIG_STM32_USB_PA11_PA12|CONFIG_MCU=|CONFIG_CLOCK_FREQ=|CONFIG_FLASH_APPLICATION_ADDRESS=' .config \
+            | tee -a manta-m5p-build-info.txt
+
+          mkdir -p manta-m5p-firmware
+          cp out/klipper.bin manta-m5p-firmware/firmware.bin
+          cp out/klipper.bin manta-m5p-firmware/manta-m5p-usb.bin
+          sha256sum manta-m5p-firmware/*.bin | tee -a manta-m5p-build-info.txt
+          stat -c '%n %s bytes' manta-m5p-firmware/*.bin | tee -a manta-m5p-build-info.txt
+
+      - name: Upload Manta M5P build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: manta-m5p-usb-firmware
+          if-no-files-found: warn
+          path: |
+            manta-m5p-firmware/*.bin
+            manta-m5p-build-info.txt
+            .config
+            .config.manta-m5p
